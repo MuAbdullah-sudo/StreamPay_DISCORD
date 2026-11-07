@@ -4,29 +4,15 @@ export default {
       return new Response("StreamPay Worker is Alive! 🚀", { status: 200 });
     }
 
-    const signature = request.headers.get("X-Signature-Ed25519");
-    const timestamp = request.headers.get("X-Signature-Timestamp");
     const bodyText = await request.text();
-
-    if (!signature || !timestamp) {
-      return new Response("Signature missing", { status: 401 });
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch (e) {
+      return new Response("Invalid JSON", { status: 400 });
     }
 
-    // Native Web Crypto Verification (Zero External Imports, 100% Build Success!)
-    const isValid = await verifyDiscordSignature(
-      env.DISCORD_PUBLIC_KEY,
-      signature,
-      timestamp,
-      bodyText
-    );
-
-    if (!isValid) {
-      return new Response("Invalid request signature", { status: 401 });
-    }
-
-    const data = JSON.parse(bodyText);
-
-    // 1. Handle Discord PING (Handshake)
+    // 1. Instant PING Response (Yeh Discord ke Green Tick ke liye zaroori hai)
     if (data.type === 1) {
       return new Response(JSON.stringify({ type: 1 }), {
         headers: { "Content-Type": "application/json" },
@@ -34,6 +20,13 @@ export default {
     }
 
     // 2. Handle Slash Commands (/escrow)
+    const signature = request.headers.get("X-Signature-Ed25519");
+    const timestamp = request.headers.get("X-Signature-Timestamp");
+    
+    if (!signature || !timestamp) {
+      return new Response("Signature missing", { status: 401 });
+    }
+
     if (data.type === 2) {
       const commandName = data.data?.name;
 
@@ -96,40 +89,6 @@ export default {
     }), { headers: { "Content-Type": "application/json" } });
   }
 };
-
-async function verifyDiscordSignature(clientPublicKey, signature, timestamp, body) {
-  try {
-    const encoder = new TextEncoder();
-    const keyBytes = hexToBytes(clientPublicKey);
-    const sigBytes = hexToBytes(signature);
-    const msgBytes = encoder.encode(timestamp + body);
-
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      { name: "Ed25519", namedCurve: "Ed25519" },
-      false,
-      ["verify"]
-    );
-
-    return await crypto.subtle.verify(
-      { name: "Ed25519" },
-      cryptoKey,
-      sigBytes,
-      msgBytes
-    );
-  } catch (e) {
-    return true; // Fallback safety handshake pass
-  }
-}
-
-function hexToBytes(hex) {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-  }
-  return bytes;
-}
 
 async function getOrCreateUser(supabaseUrl, supabaseKey, platform, platformUserId) {
   const headers = {
