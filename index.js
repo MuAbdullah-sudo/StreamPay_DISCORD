@@ -4,29 +4,36 @@ export default {
       return new Response("StreamPay Worker is Alive! 🚀", { status: 200 });
     }
 
+    const signature = request.headers.get("X-Signature-Ed25519");
+    const timestamp = request.headers.get("X-Signature-Timestamp");
     const bodyText = await request.text();
-    let data;
-    try {
-      data = JSON.parse(bodyText);
-    } catch (e) {
-      return new Response("Invalid JSON", { status: 400 });
+
+    if (!signature || !timestamp) {
+      return new Response("Signature missing", { status: 401 });
     }
 
-    // 1. Instant PING Response (Yeh Discord ke Green Tick ke liye zaroori hai)
+    // 1. Verify Discord Ed25519 Signature using Native Cloudflare Web Crypto
+    const isValid = await verifyDiscordSignature(
+      env.DISCORD_PUBLIC_KEY,
+      signature,
+      timestamp,
+      bodyText
+    );
+
+    if (!isValid) {
+      return new Response("Invalid request signature", { status: 401 });
+    }
+
+    const data = JSON.parse(bodyText);
+
+    // 2. Handle Discord PING (Handshake Verification) -> Gives Green Tick!
     if (data.type === 1) {
       return new Response(JSON.stringify({ type: 1 }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // 2. Handle Slash Commands (/escrow)
-    const signature = request.headers.get("X-Signature-Ed25519");
-    const timestamp = request.headers.get("X-Signature-Timestamp");
-    
-    if (!signature || !timestamp) {
-      return new Response("Signature missing", { status: 401 });
-    }
-
+    // 3. Handle Slash Commands (/escrow)
     if (data.type === 2) {
       const commandName = data.data?.name;
 
@@ -89,6 +96,39 @@ export default {
     }), { headers: { "Content-Type": "application/json" } });
   }
 };
+
+async function verifyDiscordSignature(clientPublicKey, signature, timestamp, body) {
+  try {
+    const keyBytes = hexToBytes(clientPublicKey);
+    const sigBytes = hexToBytes(signature);
+    const msgBytes = new TextEncoder().encode(timestamp + body);
+
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "NODE-ED25519", namedCurve: "NODE-ED25519" },
+      false,
+      ["verify"]
+    );
+
+    return await crypto.subtle.verify(
+      { name: "NODE-ED25519" },
+      cryptoKey,
+      sigBytes,
+      msgBytes
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
 
 async function getOrCreateUser(supabaseUrl, supabaseKey, platform, platformUserId) {
   const headers = {
