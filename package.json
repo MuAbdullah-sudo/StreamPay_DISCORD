@@ -1,0 +1,7 @@
+{
+  "name": "streampay-bot",
+  "version": "1.0.0",
+  "dependencies": {
+    "discord-interactions": "^3.4.0"
+  }
+}
