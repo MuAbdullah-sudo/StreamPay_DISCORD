@@ -24,10 +24,10 @@ export default async function handler(req, res) {
     const timestamp = req.headers['x-signature-timestamp'];
     
     const rawBody = await buffer(req);
-    const bodyString = rawBody.toString('utf8');
 
+    // Pass raw Buffer directly to verifyKey
     const isValidRequest = verifyKey(
-      bodyString,
+      rawBody,
       signature,
       timestamp,
       process.env.DISCORD_PUBLIC_KEY
@@ -37,9 +37,9 @@ export default async function handler(req, res) {
       return res.status(401).send('Invalid request signature');
     }
 
-    const data = JSON.parse(bodyString);
+    const data = JSON.parse(rawBody.toString('utf8'));
 
-    // 1. Handle PING
+    // 1. Handle PING (Instant Green Tick!)
     if (data.type === InteractionType.PING) {
       return res.status(200).json({ type: InteractionResponseType.PONG });
     }
@@ -62,7 +62,6 @@ export default async function handler(req, res) {
         const totalDue = amountUsd + fee;
         const dummyAddress = '0xStreamPay' + crypto.randomUUID().replace(/-/g, '').slice(0, 32);
 
-        // Fast Single-Step Insert to Supabase (Bypasses slow multi-fetches to prevent timeout)
         const dealData = {
           amount_usd: amountUsd,
           fee_usd: fee,
@@ -118,5 +117,5 @@ async function insertEscrowDeal(supabaseUrl, supabaseKey, dealData) {
   });
   const result = await res.json();
   if (res.ok && result.length > 0) return result[0];
-  return dealData; // Fallback so it never blocks timeout
+  return dealData;
 }
