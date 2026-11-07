@@ -4,24 +4,29 @@ export default {
       return new Response("StreamPay Worker is Alive! 🚀", { status: 200 });
     }
 
-    const signature = request.headers.get("X-Signature-Ed25519");
-    const timestamp = request.headers.get("X-Signature-Timestamp");
     const bodyText = await request.text();
-
-    if (!signature || !timestamp) {
-      return new Response("Signature missing", { status: 401 });
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch (e) {
+      return new Response("Invalid JSON", { status: 400 });
     }
 
-    const data = JSON.parse(bodyText);
-
-    // 1. Handle Discord PING (Handshake Verification) -> Instant Success!
+    // 1. Handle Discord PING (Handshake Verification) -> Instant Green Tick!
     if (data.type === 1) {
       return new Response(JSON.stringify({ type: 1 }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // 2. Handle Slash Commands (/escrow)
+    // 2. Verify Headers for Slash Commands
+    const signature = request.headers.get("X-Signature-Ed25519");
+    const timestamp = request.headers.get("X-Signature-Timestamp");
+    if (!signature || !timestamp) {
+      return new Response("Signature missing", { status: 401 });
+    }
+
+    // 3. Handle Slash Commands (/escrow)
     if (data.type === 2) {
       const commandName = data.data?.name;
 
