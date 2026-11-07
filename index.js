@@ -1,32 +1,48 @@
+import nacl from 'https://esm.sh/tweetnacl@1.0.3';
+
+function hexToUint8Array(hex) {
+  return new Uint8Array(hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method !== "POST") {
       return new Response("StreamPay Worker is Alive! 🚀", { status: 200 });
     }
 
+    const signature = request.headers.get("X-Signature-Ed25519");
+    const timestamp = request.headers.get("X-Signature-Timestamp");
     const bodyText = await request.text();
-    let data;
-    try {
-      data = JSON.parse(bodyText);
-    } catch (e) {
-      return new Response("Invalid JSON", { status: 400 });
+
+    if (!signature || !timestamp) {
+      return new Response("Signature missing", { status: 401 });
     }
 
-    // 1. Handle Discord PING (Handshake Verification) -> Instant Green Tick!
+    // Official Discord Ed25519 Signature Verification
+    try {
+      const isValid = nacl.sign.detached.verify(
+        new TextEncoder().encode(timestamp + bodyText),
+        hexToUint8Array(signature),
+        hexToUint8Array(env.DISCORD_PUBLIC_KEY)
+      );
+
+      if (!isValid) {
+        return new Response("Invalid request signature", { status: 401 });
+      }
+    } catch (e) {
+      return new Response("Signature verification failed", { status: 401 });
+    }
+
+    const data = JSON.parse(bodyText);
+
+    // 1. Handle Discord PING (Handshake Verification)
     if (data.type === 1) {
       return new Response(JSON.stringify({ type: 1 }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // 2. Verify Headers for Slash Commands
-    const signature = request.headers.get("X-Signature-Ed25519");
-    const timestamp = request.headers.get("X-Signature-Timestamp");
-    if (!signature || !timestamp) {
-      return new Response("Signature missing", { status: 401 });
-    }
-
-    // 3. Handle Slash Commands (/escrow)
+    // 2. Handle Slash Commands (/escrow)
     if (data.type === 2) {
       const commandName = data.data?.name;
 
